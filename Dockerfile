@@ -2,9 +2,13 @@ FROM debian:buster
 
 # Set build and runtime arguments (with default values, if nothing is passed)
 ARG DEBIAN_FRONTEND=noninteractive
-ENV SET_TIMEZONE false
-ENV TIMEZONE "Asia/Manila"
-ENV VIRTUAL_HOST localhost
+ARG set_timezone=false
+ARG tz_data="Asia/Manila"
+ARG virtual_host=localhost
+
+ENV SET_TIMEZONE=$set_timezone
+ENV TIMEZONE=$tz_data
+ENV VIRTUAL_HOST=$virtual_host
 
 # Set up working directory
 WORKDIR /var/www/html
