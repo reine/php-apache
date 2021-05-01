@@ -1,14 +1,13 @@
-FROM debian:buster
-
-# Set build and runtime arguments (with default values, if nothing is passed)
+# Set on-build arguments
 ARG DEBIAN_FRONTEND=noninteractive
-ARG set_timezone=false
-ARG tz_data="Asia/Manila"
-ARG virtual_host=localhost
+ARG set_timezone
+ARG tz_data
+ARG virtual_host
 
-ENV SET_TIMEZONE=$set_timezone
-ENV TIMEZONE=$tz_data
-ENV VIRTUAL_HOST=$virtual_host
+# Build: BASE WITH PHP AND APACHE
+FROM debian:buster AS base
+ARG virtual_host
+ENV HOSTNAME=$virtual_host
 
 # Set up working directory
 WORKDIR /var/www/html
@@ -27,21 +26,31 @@ RUN apt-get update \
         php7.4-mysql php7.4-zip php7.4-apcu-bc php7.4-apcu php7.4-xml php7.4-ldap php7.4-sqlite3 \
     && a2enconf php7.4-fpm \
     && a2enmod rewrite php7.4 \
-    && a2enmod proxy_fcgi setenvif \
-    && echo "ServerName $VIRTUAL_HOST\n<Directory /var/www/html/>\nOptions Indexes FollowSymLinks\nAllowOverride All\nRequire all granted\n</Directory>\n" >> /etc/apache2/apache2.conf \
-    && service apache2 restart
+    && a2enmod proxy_fcgi setenvif
 
-# Set timezone
-RUN if [ "$SET_TIMEZONE" = "true" ]; \
-    then echo ${TIMEZONE} > /etc/timezone && \
-        ln -sf /usr/share/zoneinfo/${TIMEZONE} /etc/localtime && \
-        dpkg-reconfigure -f noninteractive tzdata && \
-        echo "Container timezone set to: $TIMEZONE"; \
-    else echo "Container timezone not modified"; \
+RUN if [ -z "$virtual_host" ] ; then \
+        echo "ServerName localhost\n<Directory /var/www/html/>\nOptions Indexes FollowSymLinks\nAllowOverride All\nRequire all granted\n</Directory>\n" >> /etc/apache2/apache2.conf ; \
+    else \
+        echo "ServerName $HOSTNAME\n<Directory /var/www/html/>\nOptions Indexes FollowSymLinks\nAllowOverride All\nRequire all granted\n</Directory>\n" >> /etc/apache2/apache2.conf ; \
     fi
 
-# Add custom PHP configuration
-# COPY php.ini /etc/php/7.4/php.ini
+RUN service apache2 restart
+
+# Build: VERSION WITH CUSTOM TIMEZONE
+FROM base AS build-version-true
+ARG tz_data
+ENV TIMEZONE=$tz_data
+RUN echo $TIMEZONE > /etc/timezone && \
+        ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime && \
+        dpkg-reconfigure -f noninteractive tzdata && \
+        echo "Container timezone set to: $TIMEZONE";
+
+# Build: VERSION WITH DEFAULT TIMEZONE
+FROM base AS build-version-false
+RUN echo "Container timezone not modified";
+
+# Build: FINAL WITH COMPOSER
+FROM build-version-${set_timezone} AS final
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
