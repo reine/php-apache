@@ -1,6 +1,5 @@
 # Set on-build arguments
 ARG DEBIAN_FRONTEND=noninteractive
-ARG set_timezone
 ARG tz_data
 ARG virtual_host
 
@@ -28,7 +27,7 @@ RUN apt-get update \
     && a2enmod rewrite php7.4 \
     && a2enmod proxy_fcgi setenvif
 
-RUN if [ -z "$virtual_host" ] ; then \
+RUN if [ -z "$HOSTNAME" ] ; then \
         echo "ServerName localhost\n<Directory /var/www/html/>\nOptions Indexes FollowSymLinks\nAllowOverride All\nRequire all granted\n</Directory>\n" >> /etc/apache2/apache2.conf ; \
     else \
         echo "ServerName $HOSTNAME\n<Directory /var/www/html/>\nOptions Indexes FollowSymLinks\nAllowOverride All\nRequire all granted\n</Directory>\n" >> /etc/apache2/apache2.conf ; \
@@ -36,21 +35,20 @@ RUN if [ -z "$virtual_host" ] ; then \
 
 RUN service apache2 restart
 
-# Build: VERSION WITH CUSTOM TIMEZONE
-FROM base AS build-version-true
+# Build: FINAL WITH COMPOSER
+FROM base AS final
 ARG tz_data
 ENV TIMEZONE=$tz_data
-RUN echo $TIMEZONE > /etc/timezone && \
+
+# Add custom timezone (if any)
+RUN if [ -z "$TIMEZONE" ] ; then \
+        echo "Container timezone not modified" ; \
+    else \
+        echo $TIMEZONE > /etc/timezone && \
         ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime && \
         dpkg-reconfigure -f noninteractive tzdata && \
-        echo "Container timezone set to: $TIMEZONE";
-
-# Build: VERSION WITH DEFAULT TIMEZONE
-FROM base AS build-version-false
-RUN echo "Container timezone not modified";
-
-# Build: FINAL WITH COMPOSER
-FROM build-version-${set_timezone} AS final
+        echo "Container timezone set to: $TIMEZONE" ; \
+    fi
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
