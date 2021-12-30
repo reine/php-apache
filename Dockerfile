@@ -1,12 +1,10 @@
-# Set on-build arguments
-ARG DEBIAN_FRONTEND=noninteractive
-ARG tz_data
-ARG virtual_host
-
 # Build: BASE WITH PHP AND APACHE
 FROM debian:buster AS base
-ARG virtual_host
-ENV HOSTNAME=$virtual_host
+
+# Set on-build arguments
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TIME_ZONE=Asia/Manila
+ARG VIRTUAL_HOST=localhost
 
 # Set up working directory
 WORKDIR /var/www/html
@@ -25,33 +23,21 @@ RUN apt-get update \
         php7.4-mysql php7.4-zip php7.4-apcu-bc php7.4-apcu php7.4-xml php7.4-ldap php7.4-sqlite3 \
     && a2enconf php7.4-fpm \
     && a2enmod rewrite php7.4 \
-    && a2enmod proxy_fcgi setenvif
-
-RUN if [ -z "$HOSTNAME" ] ; then \
-        echo "ServerName localhost\n<Directory /var/www/html/>\nOptions Indexes FollowSymLinks\nAllowOverride All\nRequire all granted\n</Directory>\n" >> /etc/apache2/apache2.conf ; \
-    else \
-        echo "ServerName $HOSTNAME\n<Directory /var/www/html/>\nOptions Indexes FollowSymLinks\nAllowOverride All\nRequire all granted\n</Directory>\n" >> /etc/apache2/apache2.conf ; \
-    fi
-
-RUN service apache2 restart
-
+    && a2enmod proxy_fcgi setenvif \
+    && echo "ServerName $VIRTUAL_HOST\n<Directory /var/www/html/>\nOptions Indexes FollowSymLinks\nAllowOverride All\nRequire all granted\n</Directory>\n" >> /etc/apache2/apache2.conf \
+        && echo "Container virtual host set to: $VIRTUAL_HOST" \
+    && service apache2 restart \
+    && echo $TIME_ZONE > /etc/timezone && \
+        ln -sf /usr/share/zoneinfo/$TIME_ZONE /etc/localtime && \
+        dpkg-reconfigure -f noninteractive tzdata && \
+        echo "Container time zone set to: $TIME_ZONE" \
+    && apt-get clean; rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/*
+    
 # Build: FINAL WITH COMPOSER
 FROM base AS final
-ARG tz_data
-ENV TIMEZONE=$tz_data
-
-# Add custom timezone (if any)
-RUN if [ -z "$TIMEZONE" ] ; then \
-        echo "Container timezone not modified" ; \
-    else \
-        echo $TIMEZONE > /etc/timezone && \
-        ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime && \
-        dpkg-reconfigure -f noninteractive tzdata && \
-        echo "Container timezone set to: $TIMEZONE" ; \
-    fi
 
 # Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2.2.2 /usr/bin/composer /usr/bin/composer
 
 # Changed ownership on working directory
 RUN chown -R www-data:www-data /var/www/html
